@@ -9,6 +9,13 @@
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^5.13.5"
+    "@astrojs/netlify": "^6.5.9",
+    "@libsql/client": "^0.15.14",
+    "astro": "^5.13.5",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.2",
+    "cookie": "^1.0.2",
+    "dotenv": "^17.2.1",
+    "jsonwebtoken": "^9.0.2"
   }
 }

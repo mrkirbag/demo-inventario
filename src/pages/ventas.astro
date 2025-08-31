@@ -1,0 +1,226 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { verificarToken } from '../utils/auth.js';
+
+const usuario = verificarToken(Astro.request);
+if (!usuario) {
+    return Astro.redirect('/login');
+}
+---
+
+<Layout>
+    <h1>Ventas</h1>
+
+    <div class="btn-add_container">
+        <a class="btn-add" href="/ventas/agregarVentas">Agregar Venta</a>
+    </div>
+
+
+    <p>Selecciona una fecha para ver las ventas de ese día.</p>
+    <div class="input-busqueda_container">
+        <input type="date" id="inputBusqueda"/>
+    </div>
+
+    <div class="btn-add_container">
+        <a class="btn-add" id="imprimir" style="display: none;">Imprimir</a>
+    </div>
+    <table id="tabla">
+        <thead id="tablaVentasHead" style="opacity: 0;">
+            <tr>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Total</th>
+                <th>Tipo Pago</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="listaVentas">
+        </tbody>
+    </table>
+
+    <div id="mensaje"></div>
+</Layout>
+
+<style>
+
+    p {
+        font-size: 1rem;
+        margin-bottom: 1rem;
+        text-align: center;
+        font-weight: 700;
+    }
+
+</style>
+
+<script type="module" is:inline>
+
+    import { noRegistros, mostrarError, mostrarMensaje } from "/mensajes.js";
+
+    const inputBusqueda = document.getElementById("inputBusqueda");
+
+    inputBusqueda.addEventListener('input', async () => {
+
+        // Elementos del DOM
+        const tablaVentasHead = document.getElementById('tablaVentasHead');
+        const tbody = document.getElementById('listaVentas');
+        const mensaje = document.querySelector('#mensaje');
+        const btnImprimir = document.querySelector('#imprimir'); 
+
+        tbody.innerHTML = "";
+        mensaje.style.display = "none";
+
+        try {
+            const res = await fetch(`/api/ventas?fecha=${inputBusqueda.value}`);
+            const ventas = await res.json();
+
+            // Validar que no haya ventas
+            if (ventas.message) {
+                tbody.innerHTML = "";
+                btnImprimir.style.display = 'none';
+                tablaVentasHead.style.opacity = 0;
+                noRegistros(ventas.message)
+                return;
+            }
+
+            tablaVentasHead.style.opacity = 1;
+            btnImprimir.style.display = 'block'
+
+            // Obtener tasa de cambio
+            const tasaFetch = await fetch('/api/tasa');
+            const dataTasa = await tasaFetch.json();
+            const tasa = Number(dataTasa.valor);
+
+            ventas.forEach(ventas => {
+
+                // Formatear fecha
+                const fechaObjeto = new Date(ventas.fecha + "T00:00:00");
+                const opcionesFormato = { day: "2-digit", month: "2-digit", year: "numeric" };
+                const fechaFormateada = fechaObjeto.toLocaleDateString("es-ES", opcionesFormato);
+
+
+                const totalCOP = Math.ceil(ventas.total_usd * tasa);
+                const tr = document.createElement('tr');
+                tr.innerHTML = `    
+                                    <td>${fechaFormateada}</td>
+                                    <td>
+                                        ${ventas.cliente.toUpperCase()}<br />
+                                        C.I. ${ventas.cedula_cliente}
+                                    </td>
+                                    <td>
+                                        ${ventas.total_usd} USD<br />
+                                        ${totalCOP} COP
+                                    </td>
+                                    <td>${ventas.tipo_pago.toUpperCase()}</td>
+                                    <td>${ventas.estado.toUpperCase()}</td>
+                                `;
+
+                // Botones de acciones
+                const tdAcciones = document.createElement('td');
+                tdAcciones.classList.add('acciones');
+
+                // Boton de eliminar
+                const btnEliminar = document.createElement('button');
+                btnEliminar.classList.add('btn-eliminar');
+                btnEliminar.textContent = 'ANULAR';
+
+                btnEliminar.onclick = async () => {
+
+                    // Confirmación antes de eliminar
+                    const confirmar = confirm(`¿Estás seguro de ANULAR la venta del cliente ${ventas.cliente.toUpperCase()} C.I. ${ventas.cedula_cliente} con fecha de ${fechaFormateada}?`);
+                    if (!confirmar) return;
+
+                    // Enviar solicitud de eliminación al servidor
+                    try {
+                        const res = await fetch(`/api/ventas/anularVenta`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: ventas.id })
+                        });
+
+                        // Validar
+                        if(res.status === 409 || res.status === 404){
+                            const data = await res.json();
+                            mensaje.style.display = 'block';
+                            mostrarError(data.message);
+                            return; 
+                        }
+
+                        const data = await res.json();
+                        mensaje.style.display = 'block';
+                        mostrarMensaje(data.message); 
+
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1500);
+
+                    } catch(error) {
+                        console.error("Error anulando ventas:", error);
+                    }    
+                }
+                tdAcciones.appendChild(btnEliminar);
+
+                // Boton de ver informacion
+                const btnVerInfo = document.createElement('button');
+                btnVerInfo.classList.add('btn-editar');
+                btnVerInfo.textContent = 'VER INFO';
+
+                btnVerInfo.onclick = () => {
+                    window.location.href = `/ventas/${ventas.id}`;
+                };
+
+                tdAcciones.appendChild(btnVerInfo);
+
+
+                // Adjuntar acciones al tr
+                tr.appendChild(tdAcciones);
+                tbody.appendChild(tr);
+
+            });
+        } catch (err) {
+            console.error('Error al cargar usuarios:', err);
+        }
+    });
+
+    const btnImprimir = document.querySelector('#imprimir');
+
+    btnImprimir.addEventListener('click', () => {
+        
+        const tabla = document.getElementById('tabla');
+        if (!tabla) return;
+
+        const tablaClon = tabla.cloneNode(true);
+
+        // Eliminamos la última celda de cada fila
+        for (const fila of tablaClon.rows) {
+            if (fila.cells.length > 0) {
+            fila.deleteCell(fila.cells.length - 1);
+            }
+        }
+
+        // Creamos una ventana temporal para imprimir
+        const ventana = window.open('', '', 'width=800,height=600');
+        ventana.document.write(`
+                                <html>
+                                    <head>
+                                        <title>Impresión de ventas</title>
+                                        <style>
+                                            body { font-family: sans-serif; padding: 20px; }
+                                            table { border-collapse: collapse; width: 100%; }
+                                            th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <h1>REPORTE DE VENTAS DEL DIA</h1>
+                                        ${tablaClon.outerHTML}
+                                    </body>
+                                </html>
+                            `);
+        ventana.document.close();
+        ventana.focus();
+        ventana.print();
+        ventana.close();
+    });
+
+
+</script>

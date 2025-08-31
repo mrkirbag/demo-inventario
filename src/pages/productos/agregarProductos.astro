@@ -1,0 +1,122 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { verificarToken } from '../../utils/auth.js';
+
+const usuario = verificarToken(Astro.request);
+if (!usuario) {
+    return Astro.redirect('/login');
+}
+if (usuario.rol !== 'admin') {
+    return Astro.redirect('/'); 
+}
+---
+
+<Layout>
+    <h1>Agregar Productos</h1>
+
+    <div class="btn-add_container">
+        <a class="btn-add" href="/productos">Regresar</a>
+    </div>
+
+    <section class="form-container">
+        <form id="formulario">
+            <div>
+                <input type="text" name="codigo" id="codigo" placeholder="Código del Producto" />
+            </div>
+            <div>
+                <input type="text" name="nombre" id="nombre" placeholder="Nombre" />
+            </div>
+            <div>
+                <input type="number" name="stock" id="stock" placeholder="Cantidad de Stock Inicial" min="0"/>
+            </div>
+            <div>
+                <input type="text" name="costo" id="costo" placeholder="Precio de Costo en USD" min="0"/>
+            </div>
+            <div>
+                <input type="text" name="venta" id="venta" placeholder="Precio de Venta en USD" min="0"/>
+            </div>
+
+            <button type="submit">Agregar</button>
+        </form>
+    </section>
+
+
+    <div id="mensaje"></div>
+</Layout>
+
+<script type="module">
+
+    import { mostrarError, mostrarMensaje } from '/mensajes.js';
+
+    const formulario = document.getElementById('formulario');
+
+    formulario.addEventListener('submit', async (event) => { 
+        
+        event.preventDefault();
+        
+        const codigo = document.getElementById('codigo').value;
+        const nombre = document.getElementById('nombre').value;
+        const stockString = document.getElementById('stock').value;
+        const costoString = document.getElementById('costo').value;
+        const ventaString = document.getElementById('venta').value;
+
+        // Validar campos vacios
+        if (codigo === '' || nombre === '' || stockString === '' || costoString === '' || ventaString === '') {
+            mostrarError('Todos los campos son obligatorios.');
+            return;
+        }
+
+        // Validar stock
+        const stockValido = /^\d+$/.test(stockString);
+        if (!stockValido || parseInt(stockString) <= 0) {
+            mostrarError('La cantidad en stock debe ser un número positivo mayor a 0.');
+            return;
+        }
+
+        // Validar costo
+        const costoNum = parseFloat(costoString.replace(',', '.'));
+        if (isNaN(costoNum) || costoNum <= 0) {
+            mostrarError('El costo debe ser un número positivo mayor a 0.');
+            return;
+        }
+
+        // Validar venta
+        const ventaNum = parseFloat(ventaString.replace(',', '.'));
+        if (isNaN(ventaNum) || ventaNum <= 0) {
+            mostrarError('El precio de venta debe ser un número positivo mayor a 0.');
+            return;
+        }
+
+        // Parseo
+        const stock = parseInt(stockString);
+        const costo = costoNum;
+        const venta = ventaNum;
+
+        // Enviar datos al servidor
+        const response = await fetch("/api/productos", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ codigo, nombre, stock, costo, venta })
+        });
+
+        // Verificar si la respuesta es exitosa
+        if (!response.ok) {
+            if (response.status === 409) {
+                const mensaje = await response.text();
+                mostrarError(mensaje);
+            } else {
+                mostrarError('Error al agregar producto: ' + response.status);
+            }
+            return;
+        }
+
+        const data = await response.json();
+        mostrarMensaje(data.message);
+        setTimeout(() => {
+            window.location.href = '/productos';
+        }, 1000);
+    });
+
+</script>

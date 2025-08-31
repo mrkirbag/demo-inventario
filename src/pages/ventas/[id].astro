@@ -1,0 +1,263 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { verificarToken } from '../../utils/auth.js';
+
+const usuario = verificarToken(Astro.request);
+if (!usuario) {
+    return Astro.redirect('/login');
+}
+
+const {id} = Astro.params;
+---
+
+<Layout>
+
+    <div class="btn-add_container">
+        <a class="btn-add" href="/ventas">Regresar</a>
+    </div>
+
+
+    <header id="headerImp">
+        <h1>REPUESTOS Y ACCESORIOS JIMENEZ</h1>
+        <h3>Rif. V-14783702-1</h3>
+    </header>
+
+    <main>
+        <section class="datos-cliente" id="datosClienteImp">
+            <p>Nombre: <span id="clienteNombre"></span></p>
+            <p>C.I. <span id="clienteCedula"></span></p>
+            <p>Telf: <span id="clienteTelefono"></span></p>
+            <p>Fecha de Compra: <span id="fecha"></span></p>
+            <p>Tipo de Pago: <span id="tipoPago"></span></p>
+        </section>
+
+        <table id="table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Nombre</th>
+                    <th>P. Unitario</th>
+                    <th>Cantidad</th>
+                    <th>Subtotal</th>
+                </tr>
+            </thead>
+            <tbody id="listaProductos"></tbody>
+        </table>
+
+        <section class="total" id="totalImp">
+            <p>El total de la venta es de</p>
+            <p><span id="total"></span> USD</p>
+            <p>o</p>
+            <p><span id="totalCOP"></span> COP</p>
+        </section>
+    </main>
+
+    <div class="btn-add_container">
+        <a class="btn-add" id="imprimir">Imprimir</a>
+    </div>
+
+    <div id="mensaje"></div>
+</Layout>
+
+<style>
+
+    header {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+
+        & h2{
+            font-size: 1.5rem;
+        }
+
+        & h3{
+            font-size: 1rem;
+        }
+    }
+
+    .datos-cliente {
+        display: flex;
+        flex-direction: column;
+        gap: .25rem;
+        margin-bottom: 1.5rem;
+    }
+
+    span {
+        font-weight: 700;
+        font-size: 1rem
+    }
+    
+    p {
+        font-size: .85rem;
+    }
+
+    .total {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        justify-content: center;
+        margin-top: 1.5rem;
+    }
+
+
+</style>
+
+<script type="module" is:inline>
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const id = location.pathname.split("/").pop();
+        //Datos a rellenar del cliente
+        const clienteNombre = document.querySelector('#clienteNombre');
+        const clienteCedula = document.querySelector('#clienteCedula');
+        const clienteTelefono = document.querySelector('#clienteTelefono');
+        //Datos a rellenar de la venta
+        const fecha = document.querySelector('#fecha');
+        const tipoPago = document.querySelector('#tipoPago');
+        const total = document.querySelector('#total');
+        const totalCOP = document.querySelector('#totalCOP');
+        const listaProductos = document.querySelector('#listaProductos');
+
+        try {
+
+            const res = await fetch(`/api/ventas/${id}`);
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Status ${res.status} Mensaje ${errorText}`);
+            }
+
+            const data = await res.json();
+
+            console.log(data)
+
+            // Cliente
+            clienteNombre.textContent = data.cliente.nombre.toUpperCase();
+            clienteCedula.textContent = data.cliente.cedula;
+            clienteTelefono.textContent = data.cliente.telefono;
+
+            // Formatear Fecha
+            const fechaOriginal = data.venta.fecha;
+            const [ano, mes, dia] = fechaOriginal.split('-');
+            const fechaFormateada = `${dia}/${mes}/${ano}`;
+
+
+            // Venta
+            fecha.textContent = fechaFormateada;
+            tipoPago.textContent = data.venta.tipo_pago.toUpperCase();
+            total.textContent = data.venta.monto_total.toFixed(2);
+
+            //Traer la tasa para los precios:
+            const responseTasa = await fetch('/api/tasa');
+            if (!responseTasa.ok) throw new Error('Error al obtener la tasa de cambio');
+            const dataTasa = await responseTasa.json();
+            const tasa = Number(dataTasa.valor);
+
+            totalCOP.textContent = Number(data.venta.monto_total) * Number(tasa);
+
+            // Productos
+            listaProductos.innerHTML = '';
+
+            data.productos.forEach(p => {
+                const row = document.createElement('tr');
+                const pUnitarioPesos = p.precio_unitario * tasa;
+                const subtotalPesos = p.subtotal * tasa
+                row.innerHTML = `
+                                    <td>${p.codigo_producto.toUpperCase()}</td>
+                                    <td>${p.nombre_producto.toUpperCase()}</td>
+                                    <td>
+                                        ${p.precio_unitario.toFixed(2)} USD
+                                        <br />
+                                        ${pUnitarioPesos} COP
+                                        
+                                    </td>
+                                    <td>${p.cantidad}</td>
+                                    <td>
+                                        ${p.subtotal.toFixed(2)} USD
+                                        <br />
+                                        ${subtotalPesos} COP
+                                    </td>
+                                `;
+                listaProductos.appendChild(row);
+            });
+
+        }catch(error){
+            console.error(error)
+        }
+
+
+    });
+
+    const btnImprimir = document.querySelector('#imprimir');
+
+    btnImprimir.addEventListener('click', () => {
+
+        const headerImp = document.querySelector('#headerImp');
+        const datosClienteImp = document.querySelector('#datosClienteImp');
+        const table = document.querySelector('#table');
+        const totalImp = document.querySelector('#totalImp');
+
+        // Creamos una ventana temporal para imprimir
+        const ventana = window.open('', '', 'width=800,height=600');
+        ventana.document.write(`
+                                <html>
+                                    <head>
+                                        <title>Impresión de venta</title>
+                                        <style>
+                                            body {
+                                            font-family: sans-serif;
+                                            padding: 20px;
+                                            margin: 0;
+                                            }
+
+                                            .seccion {
+                                            margin-bottom: 30px;
+                                            }
+
+                                            .centrado {
+                                            text-align: center;
+                                            }
+
+                                            .izquierda {
+                                            text-align: left;
+                                            }
+
+                                            table {
+                                            border-collapse: collapse;
+                                            width: 100%;
+                                            margin: 0 auto;
+                                            }
+
+                                            th, td {
+                                            border: 1px solid #ccc;
+                                            padding: 8px;
+                                            text-align: left;
+                                            }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <div class="seccion centrado">
+                                            ${headerImp?.outerHTML || '<h2>Encabezado no disponible</h2>'}
+                                        </div>
+
+                                        <div class="seccion izquierda">
+                                            ${datosClienteImp?.outerHTML || '<p>Datos del cliente no disponibles</p>'}
+                                        </div>
+
+                                        <div class="seccion centrado">
+                                            ${table?.outerHTML || '<p>Tabla no disponible</p>'}
+                                        </div>
+
+                                        <div class="seccion izquierda">
+                                            ${totalImp?.outerHTML || '<p>Total no disponible</p>'}
+                                        </div>
+                                    </body>
+                                </html>
+                                `);
+
+        ventana.document.close();
+        ventana.focus();
+        ventana.print();
+        ventana.close();
+    });
+</script>

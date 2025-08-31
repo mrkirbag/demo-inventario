@@ -1,0 +1,126 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { verificarToken } from '../utils/auth.js';
+
+const usuario = verificarToken(Astro.request);
+if (!usuario) {
+    return Astro.redirect('/login');
+}
+if (usuario.rol !== 'admin') {
+    return Astro.redirect('/'); 
+}
+---
+
+<Layout>
+    <h1>Facturas de los Proveedores</h1>
+
+    <div class="btn-add_container">
+        <a class="btn-add" href="/facturas/agregarFacturas">Agregar Factura</a>
+    </div>
+
+    <table>
+        <thead id="thead">
+            <tr>
+                <th>Fecha</th>
+                <th>Proveedor</th>
+                <th>Monto Factura</th>
+                <th>Estado</th>
+                <th>Acciones</th>   
+            </tr>
+        </thead>
+        <tbody id="listaFacturas">
+        </tbody>
+    </table>
+
+    <div id="mensaje"></div>
+</Layout>
+
+<script type="module" is:inline>
+
+    import { noRegistros } from "/mensajes.js";
+
+    document.addEventListener('DOMContentLoaded', async () => {
+
+        // Elementos del DOM
+        const tbody = document.getElementById('listaFacturas');
+        const thead = document.getElementById('thead');
+
+        try {
+            const res = await fetch('/api/facturas');
+            const facturas = await res.json();
+
+            // Validar que no haya usuarios
+            if (facturas.message) {
+                tbody.innerHTML = "";
+                thead.style.opacity = 0;
+                noRegistros("No hay facturas registradas.")
+                return;
+            }
+
+            // Obtener tasa de cambio
+            const tasaFetch = await fetch('/api/tasa');
+            const dataTasa = await tasaFetch.json();
+            const tasa = Number(dataTasa.valor);
+
+            facturas.forEach(factura => {
+
+                const tr = document.createElement('tr');
+
+                // Formatear fecha
+                const fechaObjeto = new Date(factura.fecha + "T00:00:00");
+                const opcionesFormato = { day: "2-digit", month: "2-digit", year: "numeric" };
+                const fechaFormateada = fechaObjeto.toLocaleDateString("es-ES", opcionesFormato);
+
+
+                tr.innerHTML = `    
+                                    <td>${fechaFormateada}</td>
+                                    <td>${factura.proveedor.toUpperCase()}</td>
+                                    <td>
+                                        ${factura.monto.toFixed(2)} USD
+                                        <br />
+                                        ${Math.ceil(factura.monto * tasa)} COP
+                                    </td>
+                                    <td>${factura.estado.toUpperCase()}</td>
+                                `;
+
+                // Botones de acciones
+                const tdAcciones = document.createElement('td');
+                tdAcciones.classList.add('acciones');
+
+                // Boton de anular factura (pasar venta estado a anulada)
+                const btnAnular = document.createElement('button');
+                btnAnular.classList.add('btn-eliminar');
+                btnAnular.textContent = 'ANULAR';
+
+                btnAnular.onclick = async () => {
+
+                    // Confirmación antes de anular
+                    const confirmar = confirm(`¿Estás seguro de anular la factura de ${factura.proveedor} del día ${fechaFormateada}?`);
+                    if (!confirmar) return;
+
+                    // Enviar solicitud de eliminación al servidor
+                    try {
+                        const res = await fetch('/api/facturas/', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: factura.id })
+                        });
+
+                        window.location.reload();
+                    } catch(error) {
+                        console.error("Error anulando factura:", error);
+                    }    
+                }
+                tdAcciones.appendChild(btnAnular);
+
+                // Adjuntar acciones al tr
+                tr.appendChild(tdAcciones);
+                tbody.appendChild(tr);
+
+            });
+        } catch (err) {
+            console.error('Error al cargar facturas:', err);
+        }
+    });
+
+</script>
